@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Yonetici = e-posta/sifre ile giris yapmis herkes
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    // Siparis alimi kapatildiysa (settings/shop.closed = true) yeni siparis yazilamaz
+    function shopOpen() {
+      let p = /databases/$(database)/documents/settings/shop;
+      return !exists(p) || get(p).data.get('closed', false) != true;
+    }
+
+    // Dukkan bilgileri: herkes okur, sadece yonetici degistirir
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Indirim kodlari: musteri tek bir kodu ADIYLA sorgulayabilir (get),
+    // ama listeleyemez; yazma/listeleme sadece yonetici
+    match /coupons/{code} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // Sadakat puanlari: musteri kendi telefonuyla tek belgeyi okuyabilir;
+    // puan ekleme/dusme sadece yonetici
+    match /loyalty/{ph} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /orders/{id} {
+      allow create: if shopOpen()
+        && request.resource.data.status == 'Yeni'
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.total is number
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 60;
+      // Musteri kendi siparisinin durumunu tek tek (get) okuyabilir. Siparis numarasi
+      // tahmin edilemez (rastgele), listelemek ise yalnizca yonetici yapabilir.
+      allow get: if true;
+      allow list, update, delete: if isAdmin();
+    }
+  }
+}
